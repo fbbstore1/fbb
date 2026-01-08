@@ -4,231 +4,437 @@ import SellerModel from "../Model/SellerModel.js";
 import subcategoryModel from "../Model/SubCategoryModel.js";
 import mongoose from "mongoose";
 
-
-
-
-
 export const getProduct = async(req,res)=>{
     try {
-        const products = await productModel.find()
-        .sort({ createdAt: -1 });
-        if(products){
-            res.status(200).json(products)
+        const { page = 1, limit = 20, search = '', category, subcategory, seller } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        
+        let query = { active: true };
+        
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { description: { $regex: search, $options: 'i' } },
+                { brand: { $regex: search, $options: 'i' } }
+            ];
         }
+        
+        if (category && mongoose.Types.ObjectId.isValid(category)) {
+            query.categoryId = new mongoose.Types.ObjectId(category);
+        }
+        
+        if (subcategory && mongoose.Types.ObjectId.isValid(subcategory)) {
+            query.subCategoryId = new mongoose.Types.ObjectId(subcategory);
+        }
+        
+        if (seller && mongoose.Types.ObjectId.isValid(seller)) {
+            query.seller = new mongoose.Types.ObjectId(seller);
+        }
+        
+        const total = await productModel.countDocuments(query);
+        const products = await productModel.find(query)
+            .populate('categoryId', 'name')
+            .populate('subCategoryId', 'name')
+            .populate('seller', 'name image')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+        
+        if(!products || products.length === 0){
+            return res.status(404).json({ 
+                message: "No products found",
+                products: [],
+                total: 0,
+                page: parseInt(page),
+                totalPages: 0
+            });
+        }
+        
+        res.status(200).json({
+            products,
+            total,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(total / parseInt(limit))
+        });
     } catch (error) {
+        console.error("Get product error:", error);
         res.status(500).json({message:"Internal server error"})
     }
 }
-
 
 export const getCategory = async(req,res)=>{
     try {
+        const {id} = req.params;
 
-        const {id} = req.params
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ message: "Invalid seller ID format" });
+        }
 
-        console.log("the id is getti",id)
+        const seller = await SellerModel.findById(id).select('categories');
+        
+        if (!seller) {
+            return res.status(404).json({ message: "Seller not found" });
+        }
 
-        const seller = await SellerModel.findOne({_id:id})
-        console.log("llll")
+        if (!seller.categories || seller.categories.length === 0) {
+            return res.status(404).json({ 
+                message: "No categories assigned to this seller",
+                categories: []
+            });
+        }
 
-        console.log(seller,"is heree getting ")
         const category = await categoryModel.find({
-            _id:{$in:seller.categories}
-        });
+            _id: { $in: seller.categories },
+            active: true
+        }).select('name image description');
 
-        console.log(category,"the category is gettting ")
-    if(category){
-        res.status(200).json(category)
-    }
+        if (!category || category.length === 0) {
+            return res.status(404).json({ 
+                message: "No active categories found",
+                categories: []
+            });
+        }
+
+        res.status(200).json(category);
     } catch (error) {
-      res.status(500).json({message:"Internal server error"})
-    }
-}
-export const getSubCategories = async(req,res)=>{
-    try {
-
-        const id = req.params.id
-        const category = await subcategoryModel.find({categoryId:id})
-    if(category){
-        res.status(200).json(category)
-    }
-    } catch (error) {
-      res.status(500).json({message:"Internal server error"})
-    }
-}
-
-
-export const getDetails = async(req,res)=>{
-    try {
-        const {id} = req.params
-
-        const product = await productModel.findById(id).populate('subCategoryId', 'name').populate("seller",)
-
-        console.log(product,"this eb thge prodiuct sending ")
-        res.status(200).json(product)
-    } catch (error) {
+        console.error("Get category error:", error);
         res.status(500).json({message:"Internal server error"})
     }
 }
 
+export const getSubCategories = async(req,res)=>{
+    try {
+        const { id } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ message: "Invalid category ID format" });
+        }
+
+        const category = await subcategoryModel.find({
+            categoryId: id,
+            active: true
+        }).select('name image description').sort({ name: 1 });
+
+        if (!category || category.length === 0) {
+            return res.status(404).json({ 
+                message: "No subcategories found for this category",
+                subcategories: []
+            });
+        }
+
+        res.status(200).json(category);
+    } catch (error) {
+        console.error("Get subcategories error:", error);
+        res.status(500).json({message:"Internal server error"})
+    }
+}
+
+export const getDetails = async(req,res)=>{
+    try {
+        const {id} = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ message: "Invalid product ID format" });
+        }
+
+        const product = await productModel.findById(id)
+            .populate('subCategoryId', 'name image')
+            .populate('categoryId', 'name')
+            .populate('seller', 'name image address contact email');
+
+        if (!product) {
+            return res.status(404).json({ message: "Product not found" });
+        }
+
+        res.status(200).json(product);
+    } catch (error) {
+        console.error("Get details error:", error);
+        res.status(500).json({message:"Internal server error"})
+    }
+}
 
 export const getSubCategory = async (req, res) => {
     try {
-      const sellerId = req.params.id;
-      const categoryId = req.params.category;
-      
-      console.log("Fetching subcategories for seller:", sellerId, "and category:", categoryId);
-      
-      // First, verify that products exist with these parameters
-      const productCount = await productModel.countDocuments({
-        seller: new mongoose.Types.ObjectId(sellerId),
-        categoryId: new mongoose.Types.ObjectId(categoryId)
-      });
-      
-      console.log("Found", productCount, "products matching criteria");
-      
-      if (productCount === 0) {
-        return res.status(404).json({ 
-          message: "No products found for this seller & category" 
-        });
-      }
-      
-      const subcategories = await productModel.aggregate([
-        {
-          $match: {
-            seller: new mongoose.Types.ObjectId(sellerId),
-            categoryId: new mongoose.Types.ObjectId(categoryId)
-          }
-        },
-        {
-          $group: {
-            _id: "$subCategoryId",
-            count: { $sum: 1 }
-          }
-        },
-        // Add this stage to see what we're getting before the lookup
-        {
-          $project: {
-            _id: 1,
-            count: 1,
-            idType: { $type: "$_id" }
-          }
-        },
-        {
-          $lookup: {
-            from: "subcategories", // Make sure this matches your actual collection name
-            localField: "_id",
-            foreignField: "_id",
-            as: "subcategoryDetails"
-          }
-        },
-        {
-          $project: {
-            _id: 1,
-            count: 1,
-            idType: 1,
-            subcategoryDetails: 1,
-            subcategoryDetailsLength: { $size: "$subcategoryDetails" }
-          }
-        },
-        {
-          $match: {
-            subcategoryDetailsLength: { $gt: 0 }
-          }
-        },
-        {
-          $unwind: "$subcategoryDetails"
-        },
-        {
-          $project: {
-            _id: "$subcategoryDetails._id",
-            name: "$subcategoryDetails.name",
-            image: "$subcategoryDetails.image",
-            itemCount: "$count"
-          }
+        const sellerId = req.params.id;
+        const categoryId = req.params.category;
+        
+        if (!mongoose.Types.ObjectId.isValid(sellerId) || 
+            !mongoose.Types.ObjectId.isValid(categoryId)) {
+            return res.status(400).json({ 
+                message: "Invalid seller or category ID format" 
+            });
         }
-      ]);
-  
-      console.log("Aggregation result:", JSON.stringify(subcategories, null, 2));
-      
-      if (!subcategories.length) {
-        return res.status(404).json({ 
-          message: "Subcategories found in products but no matching records in subcategories collection" 
-        });
-      }
-  
-      res.status(200).json(subcategories);
+
+        const sellerObjectId = new mongoose.Types.ObjectId(sellerId);
+        const categoryObjectId = new mongoose.Types.ObjectId(categoryId);
+
+        const subcategories = await productModel.aggregate([
+            {
+                $match: {
+                    seller: sellerObjectId,
+                    categoryId: categoryObjectId,
+                    active: true
+                }
+            },
+            {
+                $group: {
+                    _id: "$subCategoryId",
+                    productCount: { $sum: 1 }
+                }
+            },
+            {
+                $lookup: {
+                    from: "subcategories",
+                    localField: "_id",
+                    foreignField: "_id",
+                    as: "subcategoryInfo"
+                }
+            },
+            {
+                $unwind: "$subcategoryInfo"
+            },
+            {
+                $match: {
+                    "subcategoryInfo.active": true
+                }
+            },
+            {
+                $project: {
+                    _id: "$subcategoryInfo._id",
+                    name: "$subcategoryInfo.name",
+                    image: "$subcategoryInfo.image",
+                    description: "$subcategoryInfo.description",
+                    itemCount: "$productCount"
+                }
+            },
+            {
+                $sort: { name: 1 }
+            }
+        ]);
+
+        if (!subcategories.length) {
+            return res.status(404).json({ 
+                message: "No active subcategories found for this seller and category",
+                subcategories: []
+            });
+        }
+
+        res.status(200).json(subcategories);
     } catch (error) {
-      console.error("Subcategory fetch error:", error);
-      res.status(500).json({ 
-        message: "Internal server error", 
-        error: error.message 
-      });
+        console.error("Get subcategory error:", error);
+        res.status(500).json({ 
+            message: "Internal server error", 
+            error: error.message 
+        });
     }
 }
 
 export const ProductType = async(req,res)=>{
     try {
-        const {id} = req.params
+        const {id} = req.params;
 
-        const type = await ProductTypeModel.find({subCategoryId:id})
-        if(!type){
-            res.status(404).json({message:"subcategory not found"})
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ message: "Invalid subcategory ID format" });
         }
-        res.status(200).json(type)
+
+        const types = await productModel.aggregate([
+            {
+                $match: {
+                    subCategoryId: new mongoose.Types.ObjectId(id),
+                    active: true,
+                    type: { $exists: true, $ne: "" }
+                }
+            },
+            {
+                $group: {
+                    _id: "$type",
+                    count: { $sum: 1 }
+                }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    type: "$_id",
+                    count: 1
+                }
+            },
+            {
+                $sort: { type: 1 }
+            }
+        ]);
+
+        if (!types.length) {
+            return res.status(404).json({ 
+                message: "No product types found for this subcategory",
+                types: []
+            });
+        }
+
+        res.status(200).json(types);
     } catch (error) {
+        console.error("Product type error:", error);
         res.status(500).json({message:"Internal server error"})
     }
 }
 
 export const relatedProduct = async (req, res) => {
     try {
-      const subCategoryId = req.params.category;
-      const sellerId = req.params.seller;
-      
-      console.log("Finding related products for subCategory:", subCategoryId, "and seller:", sellerId);
-      
-      const subCategoryObjectId = new mongoose.Types.ObjectId(subCategoryId);
-      const sellerObjectId = new mongoose.Types.ObjectId(sellerId);
-      
-      const products = await productModel.find({ 
-        subCategoryId: subCategoryObjectId,
-        seller: sellerObjectId,
-        active: true 
-      })
-      .populate("subCategoryId")
-      .populate("categoryId")
-      .populate("seller", "name Image");
-      
-      console.log(`Found ${products.length} related products`);
-      
-      if (!products.length) {
-        return res.status(404).json({ 
-          message: "No related products found for this subcategory and seller" 
-        });
-      }
-      
-      res.status(200).json(products);
+        const subCategoryId = req.params.category;
+        const sellerId = req.params.seller;
+        
+        if (!mongoose.Types.ObjectId.isValid(subCategoryId) || 
+            !mongoose.Types.ObjectId.isValid(sellerId)) {
+            return res.status(400).json({ 
+                message: "Invalid subcategory or seller ID format" 
+            });
+        }
+
+        const subCategoryObjectId = new mongoose.Types.ObjectId(subCategoryId);
+        const sellerObjectId = new mongoose.Types.ObjectId(sellerId);
+        
+        const products = await productModel.find({ 
+            subCategoryId: subCategoryObjectId,
+            seller: sellerObjectId,
+            active: true 
+        })
+        .populate("subCategoryId", "name image")
+        .populate("categoryId", "name")
+        .populate("seller", "name image")
+        .limit(10)
+        .sort({ createdAt: -1 });
+        
+        if (!products.length) {
+            return res.status(404).json({ 
+                message: "No related products found",
+                products: []
+            });
+        }
+        
+        res.status(200).json(products);
     } catch (error) {
-      console.error("Related products fetch error:", error);
-      res.status(500).json({ 
-        message: "Internal server error", 
-        error: error.message 
-      });
+        console.error("Related products error:", error);
+        res.status(500).json({ 
+            message: "Internal server error", 
+            error: error.message 
+        });
     }
-  };
+};
 
 export const getSellers = async(req,res)=>{
     try {
+        const sellers = await SellerModel.find({ active: true })
+            .select('name image description address contact email')
+            .sort({ name: 1 });
 
-        console.log("jiiiibhueiheih")
-        const sellers = await SellerModel.find()
+        if (!sellers.length) {
+            return res.status(404).json({ 
+                message: "No active sellers found",
+                sellers: []
+            });
+        }
 
-        console.log(sellers,"the sellers ")
-
-        res.status(200).json(sellers)
+        res.status(200).json(sellers);
     } catch (error) {
-        console.error(error)
+        console.error("Get sellers error:", error);
         res.status(500).json({message:"internal server error"})
+    }
+}
+
+export const getProductsByType = async(req,res)=>{
+    try {
+        const { type, subCategoryId, sellerId } = req.params;
+        const { page = 1, limit = 20 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        
+        let query = { 
+            active: true,
+            type: type 
+        };
+        
+        if (mongoose.Types.ObjectId.isValid(subCategoryId)) {
+            query.subCategoryId = new mongoose.Types.ObjectId(subCategoryId);
+        }
+        
+        if (mongoose.Types.ObjectId.isValid(sellerId)) {
+            query.seller = new mongoose.Types.ObjectId(sellerId);
+        }
+        
+        const total = await productModel.countDocuments(query);
+        const products = await productModel.find(query)
+            .populate('subCategoryId', 'name image')
+            .populate('categoryId', 'name')
+            .populate('seller', 'name image')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+        
+        if(!products.length){
+            return res.status(404).json({ 
+                message: "No products found for this type",
+                products: [],
+                total: 0,
+                page: parseInt(page),
+                totalPages: 0
+            });
+        }
+        
+        res.status(200).json({
+            products,
+            total,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(total / parseInt(limit))
+        });
+    } catch (error) {
+        console.error("Get products by type error:", error);
+        res.status(500).json({message:"Internal server error"})
+    }
+}
+
+export const getProductsBySeller = async(req,res)=>{
+    try {
+        const { sellerId } = req.params;
+        const { page = 1, limit = 20 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        
+        if (!mongoose.Types.ObjectId.isValid(sellerId)) {
+            return res.status(400).json({ message: "Invalid seller ID format" });
+        }
+        
+        const query = { 
+            seller: new mongoose.Types.ObjectId(sellerId),
+            active: true 
+        };
+        
+        const total = await productModel.countDocuments(query);
+        const products = await productModel.find(query)
+            .populate('subCategoryId', 'name image')
+            .populate('categoryId', 'name')
+            .populate('seller', 'name image')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+        
+        if(!products.length){
+            return res.status(404).json({ 
+                message: "No products found for this seller",
+                products: [],
+                total: 0,
+                page: parseInt(page),
+                totalPages: 0
+            });
+        }
+        
+        res.status(200).json({
+            products,
+            total,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(total / parseInt(limit))
+        });
+    } catch (error) {
+        console.error("Get products by seller error:", error);
+        res.status(500).json({message:"Internal server error"})
     }
 }
