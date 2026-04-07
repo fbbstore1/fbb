@@ -4,7 +4,7 @@ import UserModel from "../Model/UserModel.js";
 import SellerModel from "../Model/SellerModel.js";
 import mongoose from "mongoose";
 import crypto from "crypto";
-import { sendOrderConfirmationEmail, sendSellerNewOrderEmail } from "../utils/emailService.js";
+import { sendOrderConfirmationEmail, sendSellerNewOrderEmail } from "../Utils/emailService.js";
 import Razorpay from "razorpay";
 
 const generateOrderId = () => {
