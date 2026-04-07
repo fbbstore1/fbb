@@ -3,6 +3,8 @@ import multer from "multer";
 import { S3Client } from "@aws-sdk/client-s3";
 import multerS3 from "multer-s3";
 import dotenv from 'dotenv';
+import jwt from "jsonwebtoken";
+import SellerModel from "../Model/SellerModel.js";
 import { 
   SignUp, 
   addProduct, 
@@ -21,6 +23,25 @@ import {
 dotenv.config();
 
 const SellerRouter = express.Router();
+
+const sellerAuthMiddleware = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const seller = await SellerModel.findById(decoded.userId);
+    if (!seller) {
+      return res.status(401).json({ success: false, message: "Seller not found" });
+    }
+    req.user = { userId: decoded.userId };
+    req.seller = seller;
+    next();
+  } catch (error) {
+    res.status(401).json({ success: false, message: "Invalid token" });
+  }
+};
 
 const s3Client = new S3Client({
   region: "eu-north-1",
@@ -64,7 +85,6 @@ const handleProductMedia = async (req, res, next) => {
       { name: 'video1', maxCount: 1 },
       { name: 'video2', maxCount: 1 }
     ];
-    
     return mediaUpload.fields(mediaFields)(req, res, (err) => {
       if (err) {
         return res.status(400).json({ error: `Error uploading files: ${err.message}` });
@@ -88,8 +108,8 @@ SellerRouter.get("/get-products/:id", getProducts);
 SellerRouter.put("/edit-product/:id", handleProductMedia, updateProduct);
 SellerRouter.delete("/delete-product/:id", deleteProduct);
 
-SellerRouter.get("/orders", getSellerOrders);
-SellerRouter.post("/orders/update-status", updateOrderStatus);
-SellerRouter.get("/dashboard/stats", getSellerDashboardStats);
+SellerRouter.get("/orders", sellerAuthMiddleware, getSellerOrders);
+SellerRouter.post("/orders/update-status", sellerAuthMiddleware, updateOrderStatus);
+SellerRouter.get("/dashboard/stats", sellerAuthMiddleware, getSellerDashboardStats);
 
 export default SellerRouter;
