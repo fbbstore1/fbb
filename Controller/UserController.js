@@ -89,9 +89,8 @@ export const getProduct = async(req,res)=>{
             .lean();
         
         if(!products || products.length === 0){
-            return res.status(404).json({ 
-                success: false,
-                message: "No products found",
+            return res.status(200).json({ 
+                success: true,
                 products: [],
                 total: 0,
                 page: parseInt(page),
@@ -145,9 +144,8 @@ export const getCategory = async(req,res)=>{
         }
 
         if (!seller.categories || seller.categories.length === 0) {
-            return res.status(404).json({ 
-                success: false,
-                message: "No categories assigned to this seller",
+            return res.status(200).json({ 
+                success: true,
                 categories: []
             });
         }
@@ -175,27 +173,29 @@ export const getCategory = async(req,res)=>{
 
 export const getSubCategories = async(req,res)=>{
     try {
-
-      console.log("first")
         const { id } = req.params;
-        console.log(id)
+        console.log("Fetching subcategories for category ID:", id);
+        
         const cacheKey = `subcategories:${id}`;
         const cachedData = getFromCache(cacheKey);
         if (cachedData) {
+            console.log("Returning cached subcategories:", cachedData);
             return res.status(200).json(cachedData);
         }
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ 
-                success: false,
-                message: "Invalid category ID format" 
+            console.log("Invalid category ID format:", id);
+            return res.status(200).json({ 
+                success: true,
+                subcategories: []
             });
         }
 
         const subcategories = await subcategoryModel.find({
-            categoryId: id,
-            active: true
+            categoryId: id
         }).select('name image description').sort({ name: 1 }).lean();
+
+        console.log(`Found ${subcategories.length} subcategories for category ${id}:`, subcategories);
 
         const response = {
             success: true,
@@ -207,10 +207,10 @@ export const getSubCategories = async(req,res)=>{
         res.status(200).json(response);
     } catch (error) {
         console.error("Get subcategories error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Internal server error"
-        })
+        res.status(200).json({
+            success: true,
+            subcategories: []
+        });
     }
 }
 
@@ -238,7 +238,6 @@ export const getDetails = async(req,res)=>{
             .populate('seller', 'name image address INR DXB email')
             .lean();
 
-            console.log(product.seller)
         if (!product) {
             return res.status(404).json({ 
                 success: false,
@@ -265,8 +264,6 @@ export const getDetails = async(req,res)=>{
 
 export const getSubCategory = async (req, res) => {
     try {
-
-      console.log("jjeje")
         const sellerId = req.params.id;
         const categoryId = req.params.category;
         
@@ -325,7 +322,6 @@ export const getSubCategory = async (req, res) => {
             }
         ]);
 
-        console.log(subcategories)
         const response = {
             success: true,
             subcategories: subcategories || []
@@ -606,6 +602,90 @@ export const clearCacheHandler = async (req, res) => {
     }
 };
 
+export const getAllCategories = async(req,res)=>{
+    try {
+        const cacheKey = 'all-categories';
+        const cachedData = getFromCache(cacheKey);
+        if (cachedData) {
+            return res.status(200).json(cachedData);
+        }
+
+        const categories = await categoryModel.find()
+            .select('name image')
+            .sort({ name: 1 })
+            .lean();
+
+        const response = {
+            success: true,
+            categories: categories || []
+        };
+        
+        setToCache(cacheKey, response);
+        
+        res.status(200).json(response);
+    } catch (error) {
+        console.error("Get all categories error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Internal server error"
+        })
+    }
+}
+
+export const getCategoriesWithSubcategories = async (req, res) => {
+    try {
+        const cacheKey = 'categories:with-subcategories';
+        
+        const cachedData = getFromCache(cacheKey);
+        if (cachedData) {
+            return res.status(200).json(cachedData);
+        }
+
+        const categories = await categoryModel.find()
+            .select('_id name image')
+            .sort({ name: 1 })
+            .lean();
+
+        if (!categories || categories.length === 0) {
+            const response = { success: true, categories: [] };
+            setToCache(cacheKey, response);
+            return res.status(200).json(response);
+        }
+
+        const categoriesWithSubcategories = await Promise.all(
+            categories.map(async (category) => {
+                const subcategories = await subcategoryModel.find({
+                    categoryId: category._id
+                })
+                .select('_id name image description')
+                .lean();
+
+                return {
+                    _id: category._id,
+                    name: category.name,
+                    image: category.image,
+                    subcategories: subcategories || []
+                };
+            })
+        );
+
+        const response = {
+            success: true,
+            categories: categoriesWithSubcategories
+        };
+        
+        setToCache(cacheKey, response);
+        
+        res.status(200).json(response);
+    } catch (error) {
+        console.error("Get categories with subcategories error:", error);
+        res.status(200).json({
+            success: true,
+            categories: []
+        });
+    }
+};
+
 export default {
     getProduct,
     getCategory,
@@ -617,5 +697,7 @@ export default {
     getSellers,
     getProductsByType,
     getProductsBySeller,
-    clearCacheHandler
+    clearCacheHandler,
+    getAllCategories,
+    getCategoriesWithSubcategories
 };
