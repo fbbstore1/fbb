@@ -3,8 +3,11 @@ import UserModel from "../Model/UserModel.js";
 
 export const authMiddleware = async (req, res, next) => {
   try {
+
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) {
+      console.log("auth")
+
       return res.status(401).json({
         success: false,
         message: "Authentication required"

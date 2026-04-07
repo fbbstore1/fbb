@@ -108,7 +108,10 @@ export const register = async (req, res) => {
 
 export const verifyEmail = async (req, res) => {
   try {
+    console.log("is here ")
+
     const { email, otp } = req.body;
+    console.log("is here ")
 
     const user = await UserModel.findOne({ email, isGuest: false });
 
@@ -417,6 +420,7 @@ export const getGuestUser = async (req, res) => {
 
 export const logout = async (req, res) => {
   try {
+    console.log("first")
     const userId = req.userId;
 
     await UserModel.findByIdAndUpdate(userId, {

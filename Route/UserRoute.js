@@ -63,7 +63,7 @@ dotenv.config();
 
 UserRoute.post("/register", register);
 UserRoute.post("/login", login);
-UserRoute.post("/verify-email", verifyEmail);
+UserRoute.post("/verify-otp", verifyEmail);
 UserRoute.post("/resend-otp", resendOtp);
 UserRoute.post("/google-auth", googleAuth);
 UserRoute.post("/guest", getGuestUser);
