@@ -19,6 +19,7 @@ import {
   getSellerDashboardStats,
   getSellerProfile
 } from "../Controller/SellerController.js";
+import { getSalesReport } from "../Controller/OrderController.js";
 
 dotenv.config();
 
@@ -111,5 +112,6 @@ SellerRouter.delete("/delete-product/:id", deleteProduct);
 SellerRouter.get("/orders", sellerAuthMiddleware, getSellerOrders);
 SellerRouter.post("/orders/update-status", sellerAuthMiddleware, updateOrderStatus);
 SellerRouter.get("/dashboard/stats", sellerAuthMiddleware, getSellerDashboardStats);
+SellerRouter.get("/sales-report", sellerAuthMiddleware, getSalesReport)
 
 export default SellerRouter;

@@ -886,3 +886,99 @@ try {
   });
 }
 };
+
+export const getSalesReport = async (req, res) => {
+  try {
+    const sellerId = req.seller._id
+    const { range } = req.query
+
+    let startDate = new Date()
+
+    if (range === 'week') {
+      startDate.setDate(startDate.getDate() - 7)
+    } else if (range === 'month') {
+      startDate.setMonth(startDate.getMonth() - 1)
+    } else if (range === 'quarter') {
+      startDate.setMonth(startDate.getMonth() - 3)
+    } else if (range === 'year') {
+      startDate.setFullYear(startDate.getFullYear() - 1)
+    }
+
+    const orders = await OrderModel.find({
+      createdAt: { $gte: startDate },
+      "items.seller": sellerId,
+      paymentStatus: "completed"
+    })
+
+    let totalSales = 0
+    let totalOrders = orders.length
+    let totalProducts = 0
+
+    const salesMap = {}
+    const categoryMap = {}
+
+    for (const order of orders) {
+      for (const item of order.items) {
+        if (item.seller.toString() !== sellerId.toString()) continue
+
+        const date = new Date(order.createdAt).toISOString().split('T')[0]
+
+        if (!salesMap[date]) {
+          salesMap[date] = { sales: 0, orders: 0 }
+        }
+
+        salesMap[date].sales += item.price * item.quantity
+        salesMap[date].orders += 1
+
+        totalSales += item.price * item.quantity
+        totalProducts += item.quantity
+
+        const product = await ProductModel.findById(item.product).populate('category')
+
+        const categoryName = product?.category?.name || "Others"
+
+        if (!categoryMap[categoryName]) {
+          categoryMap[categoryName] = 0
+        }
+
+        categoryMap[categoryName] += item.quantity
+      }
+    }
+
+    const salesData = Object.keys(salesMap).map(date => ({
+      date,
+      sales: salesMap[date].sales,
+      orders: salesMap[date].orders
+    }))
+
+    const categoryData = Object.keys(categoryMap).map(name => ({
+      name,
+      value: categoryMap[name]
+    }))
+
+    const avgOrderValue = totalOrders ? totalSales / totalOrders : 0
+
+    res.status(200).json({
+      success: true,
+      data: {
+        summary: {
+          totalSales,
+          totalOrders,
+          totalProducts,
+          avgOrderValue,
+          growthRate: 0
+        },
+        salesData,
+        categoryData,
+        monthlyTrends: []
+      }
+    })
+
+  } catch (error) {
+    console.error("Sales report error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to load sales report"
+    })
+  }
+}
