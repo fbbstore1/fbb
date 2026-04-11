@@ -9,9 +9,8 @@ const ProductSchema = new mongoose.Schema({
   },
   brand: {
     type: String,
-    required: true,
-    index: true,
-    trim: true
+    trim: true,
+    default: ''  // Make brand optional with default
   },
   priceINR: {
     type: Number,
@@ -20,17 +19,19 @@ const ProductSchema = new mongoose.Schema({
   },
   priceAED: {
     type: Number,
-    required: true,
-    min: 0
+    min: 0,
+    default: 0  // Make priceAED optional with default
   },
   description: {
     type: String,
-    trim: true
+    trim: true,
+    default: ''
   },
   shortDescription: {
     type: String,
     maxlength: 200,
-    trim: true
+    trim: true,
+    default: ''
   },
   specifications: {
     type: Map,
@@ -40,13 +41,13 @@ const ProductSchema = new mongoose.Schema({
   sku: {
     type: String,
     unique: true,
-    sparse: true,
-    trim: true
+    sparse: true,  // Keep sparse to allow multiple nulls
+    trim: true,
+    default: null  // Allow auto-generation
   },
   stock: {
     type: Number,
-    required: true,
-    default: 0,
+    default: 0,  // Default to 0 instead of required
     min: 0
   },
   lowStockThreshold: {
@@ -57,7 +58,8 @@ const ProductSchema = new mongoose.Schema({
   weight: {
     value: {
       type: Number,
-      min: 0
+      min: 0,
+      default: 0
     },
     unit: {
       type: String,
@@ -68,15 +70,18 @@ const ProductSchema = new mongoose.Schema({
   dimensions: {
     length: {
       type: Number,
-      min: 0
+      min: 0,
+      default: 0
     },
     width: {
       type: Number,
-      min: 0
+      min: 0,
+      default: 0
     },
     height: {
       type: Number,
-      min: 0
+      min: 0,
+      default: 0
     },
     unit: {
       type: String,
@@ -86,60 +91,68 @@ const ProductSchema = new mongoose.Schema({
   },
   colors: [{
     type: String,
-    trim: true
+    trim: true,
+    default: []
   }],
   sizes: [{
     type: String,
-    trim: true
+    trim: true,
+    default: []
   }],
   material: {
     type: String,
-    trim: true
+    trim: true,
+    default: ''
   },
   warranty: {
     period: {
       type: Number,
-      min: 0
+      min: 0,
+      default: 0
     },
     unit: {
       type: String,
-      enum: ['days', 'months', 'years']
+      enum: ['days', 'months', 'years'],
+      default: 'months'
     },
     description: {
       type: String,
-      trim: true
+      trim: true,
+      default: ''
     }
   },
   tags: [{
     type: String,
     trim: true,
-    index: true
+    index: true,
+    default: []
   }],
   images: {
-    image1: { type: String, required: true },
-    image2: { type: String },
-    image3: { type: String },
-    image4: { type: String }
+    image1: { type: String, required: true },  // Keep this required - ensures at least one image
+    image2: { type: String, default: '' },
+    image3: { type: String, default: '' },
+    image4: { type: String, default: '' }
   },
   videos: {
-    video1: { type: String },
-    video2: { type: String }
+    video1: { type: String, default: '' },
+    video2: { type: String, default: '' }
   },
   subCategoryId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'subcategory',
-    index: true
+    index: true,
+    required: true  // Keep required
   },
   categoryId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
-    required: true,
+    required: true,  // Keep required
     index: true
   },
   seller: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Seller",
-    required: true,
+    required: true,  // Keep required
     index: true
   },
   active: {
@@ -169,8 +182,14 @@ const ProductSchema = new mongoose.Schema({
       min: 0,
       default: 0
     },
-    startDate: Date,
-    endDate: Date
+    startDate: {
+      type: Date,
+      default: null
+    },
+    endDate: {
+      type: Date,
+      default: null
+    }
   },
   rating: {
     average: {
@@ -195,7 +214,8 @@ const ProductSchema = new mongoose.Schema({
   type: {
     type: String,
     index: true,
-    trim: true
+    trim: true,
+    default: ''
   },
   shippingInfo: {
     weightBased: {
@@ -224,20 +244,24 @@ const ProductSchema = new mongoose.Schema({
   },
   metaTitle: {
     type: String,
-    trim: true
+    trim: true,
+    default: ''
   },
   metaDescription: {
     type: String,
-    trim: true
+    trim: true,
+    default: ''
   },
   metaKeywords: [{
     type: String,
-    trim: true
+    trim: true,
+    default: []
   }]
 }, { 
   timestamps: true 
 });
 
+// Indexes remain the same
 ProductSchema.index({ seller: 1, trending: 1 });
 ProductSchema.index({ categoryId: 1, active: 1 });
 ProductSchema.index({ subCategoryId: 1, active: 1 });
