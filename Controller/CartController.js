@@ -5,12 +5,10 @@ import mongoose from "mongoose";
 import crypto from "crypto";
 
 const getUser = async (req) => {
-  // First try to get user from auth token (for logged-in users)
   if (req.user && req.user._id) {
     return await UserModel.findById(req.user._id);
   }
   
-  // If no auth token, try cookies (for guest users)
   const { deviceId, sessionToken } = req.cookies || {};
   
   if (deviceId || sessionToken) {
@@ -45,7 +43,6 @@ const getUser = async (req) => {
   throw new Error("User not found");
 };
 
-// Helper function to calculate cart totals
 const calculateCartTotals = (cart) => {
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
   const cartTotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
@@ -733,7 +730,6 @@ export const getCartSummary = async (req, res) => {
   }
 };
 
-// CREATE ORDER FUNCTION
 export const createOrder = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -876,7 +872,6 @@ export const createOrder = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    // Populate order details for response
     await order.populate([
       {
         path: 'items.product',
