@@ -732,7 +732,7 @@ export const getSellerOrders = async (req, res) => {
     const orders = await OrderModel.find({
       "sellerOrders.seller": sellerId
     })
-      .populate('user', 'name email phone')
+      .populate('user', 'name email phone address')
       .populate({
         path: 'items.product',
         select: 'name brand images'
@@ -747,6 +747,7 @@ export const getSellerOrders = async (req, res) => {
       return {
         orderId: order.orderId,
         createdAt: order.createdAt,
+        orderDate: order.createdAt,
         user: order.user,
         items: order.items.filter(item =>
           item.seller.toString() === sellerId.toString()
@@ -756,10 +757,23 @@ export const getSellerOrders = async (req, res) => {
         tax: sellerOrder?.tax || 0,
         total: sellerOrder?.total || 0,
         sellerStatus: sellerOrder?.sellerStatus || 'pending',
+        status: order.status,
         trackingNumber: sellerOrder?.trackingNumber,
         shippedAt: sellerOrder?.shippedAt,
         orderStatus: order.status,
-        paymentStatus: order.paymentStatus
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        shippingAddress: order.shippingAddress || null,
+        billingAddress: order.billingAddress || null,
+        sellerOrder: {
+          subtotal: sellerOrder?.subtotal || 0,
+          shipping: sellerOrder?.shipping || 0,
+          tax: sellerOrder?.tax || 0,
+          total: sellerOrder?.total || 0,
+          trackingNumber: sellerOrder?.trackingNumber,
+          shippedAt: sellerOrder?.shippedAt,
+          sellerStatus: sellerOrder?.sellerStatus || 'pending'
+        }
       };
     });
 
@@ -768,6 +782,7 @@ export const getSellerOrders = async (req, res) => {
       orders: formattedOrders
     });
   } catch (error) {
+    console.error('Error in getSellerOrders:', error);
     res.status(500).json({
       success: false,
       message: "Failed to get seller orders",
