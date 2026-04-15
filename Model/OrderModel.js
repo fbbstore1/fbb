@@ -24,12 +24,12 @@ const OrderItemSchema = new mongoose.Schema(
     selectedSize: String,
     itemStatus: {
       type: String,
-      enum: ["pending", "processing", "packed", "shipped", "delivered", "cancelled", "returned"],
+      enum: ["pending", "accepted", "processing", "packed", "shipped", "delivered", "cancelled", "returned"],
       default: "pending"
     },
     sellerStatus: {
       type: String,
-      enum: ["pending", "accepted", "rejected", "preparing", "ready_for_dispatch"],
+      enum: ["pending", "accepted", "rejected", "processing", "preparing", "ready_for_dispatch", "shipped", "delivered", "cancelled"],
       default: "pending"
     },
     trackingNumber: String,
@@ -77,8 +77,16 @@ const SellerOrderSchema = new mongoose.Schema(
     },
     sellerStatus: {
       type: String,
-      enum: ["pending", "processing", "shipped", "delivered", "cancelled"],
+      enum: ["pending", "accepted", "processing", "shipped", "delivered", "cancelled"],
       default: "pending"
+    },
+    trackingNumber: {
+      type: String,
+      default: null
+    },
+    shippedAt: {
+      type: Date,
+      default: null
     }
   },
   { _id: false }
@@ -111,7 +119,8 @@ const OrderSchema = new mongoose.Schema(
       city: String,
       state: String,
       country: String,
-      pincode: String
+      pincode: String,
+      email: String
     },
     billingAddress: {
       name: String,
@@ -120,11 +129,12 @@ const OrderSchema = new mongoose.Schema(
       city: String,
       state: String,
       country: String,
-      pincode: String
+      pincode: String,
+      email: String
     },
     paymentMethod: {
       type: String,
-      enum: ["razorpay", "cod"],
+      enum: ["razorpay", "cod", "card", "upi"],
       required: true
     },
     paymentStatus: {
@@ -153,7 +163,7 @@ const OrderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["temporary", "pending", "processing", "partially_shipped", "shipped", "delivered", "cancelled", "returned"],
+      enum: ["temporary", "pending", "accepted", "processing", "partially_shipped", "shipped", "delivered", "cancelled", "returned"],
       default: "pending"
     },
     notes: String,
@@ -161,10 +171,22 @@ const OrderSchema = new mongoose.Schema(
     refundAmount: {
       type: Number,
       default: 0
+    },
+    couponCode: String,
+    discountAmount: {
+      type: Number,
+      default: 0
     }
   },
   { timestamps: true }
 );
+
+OrderSchema.index({ orderId: 1 });
+OrderSchema.index({ user: 1 });
+OrderSchema.index({ status: 1 });
+OrderSchema.index({ createdAt: -1 });
+OrderSchema.index({ "sellerOrders.seller": 1 });
+OrderSchema.index({ "sellerOrders.sellerStatus": 1 });
 
 const OrderModel = mongoose.model("Order", OrderSchema);
 export default OrderModel;

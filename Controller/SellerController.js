@@ -793,7 +793,7 @@ export const getSellerOrders = async (req, res) => {
 
 export const updateOrderStatus = async (req, res) => {
   try {
-    const { orderId, status, trackingNumber } = req.body;
+    const { orderId, itemId, status, trackingNumber } = req.body;
     const sellerId = req.user?.userId;
 
     if (!orderId || !status) {
@@ -812,7 +812,16 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    const sellerOrder = order.sellerOrders.find(so =>
+    const validStatuses = ['pending', 'accepted', 'processing', 'shipped', 'delivered', 'cancelled'];
+    
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Allowed statuses: ${validStatuses.join(', ')}`
+      });
+    }
+
+    let sellerOrder = order.sellerOrders.find(so =>
       so.seller.toString() === sellerId.toString()
     );
 
@@ -831,22 +840,63 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     order.items.forEach(item => {
-      if (item.seller.toString() === sellerId.toString()) {
-        item.itemStatus = status;
-        if (status === 'shipped' && trackingNumber) {
-          item.trackingNumber = trackingNumber;
+      if (item.seller && item.seller.toString() === sellerId.toString()) {
+        if (status === 'shipped') {
+          item.itemStatus = 'shipped';
+          if (trackingNumber) {
+            item.trackingNumber = trackingNumber;
+          }
+        } else if (status === 'accepted') {
+          item.sellerStatus = 'accepted';
+        } else if (status === 'processing') {
+          item.itemStatus = 'processing';
+          item.sellerStatus = 'processing';
+        } else if (status === 'delivered') {
+          item.itemStatus = 'delivered';
+        } else if (status === 'cancelled') {
+          item.itemStatus = 'cancelled';
+          item.sellerStatus = 'cancelled';
         }
       }
     });
 
+    const allItemsDelivered = order.items.every(item => 
+      item.itemStatus === 'delivered' || 
+      (item.seller && item.seller.toString() !== sellerId.toString())
+    );
+    
+    if (allItemsDelivered && status === 'delivered') {
+      order.status = 'delivered';
+    }
+
+    const allItemsShipped = order.items.every(item => 
+      item.itemStatus === 'shipped' || item.itemStatus === 'delivered' ||
+      (item.seller && item.seller.toString() !== sellerId.toString())
+    );
+    
+    if (allItemsShipped && status === 'shipped') {
+      order.status = 'partially_shipped';
+      const allSellersShipped = order.sellerOrders.every(so => 
+        so.sellerStatus === 'shipped' || so.sellerStatus === 'delivered'
+      );
+      if (allSellersShipped) {
+        order.status = 'shipped';
+      }
+    }
+
     await order.save();
+
+    const updatedOrder = await OrderModel.findOne({ orderId })
+      .populate('user', 'name email phone')
+      .populate('items.product', 'name brand images');
 
     res.status(200).json({
       success: true,
       message: "Order status updated successfully",
-      order: order
+      order: updatedOrder
     });
   } catch (error) {
+    console.error('Error in updateOrderStatus:', error);
     res.status(500).json({
       success: false,
       message: "Failed to update order status",
