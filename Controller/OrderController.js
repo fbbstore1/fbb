@@ -911,27 +911,23 @@ export const getSalesReport = async (req, res) => {
     endDate.setHours(23, 59, 59, 999)
 
     const orders = await OrderModel.find({
-      createdAt: { $gte: startDate, $lte: endDate },
-      "items.seller": sellerId
-    }).populate('items.product')
+      createdAt: { $gte: startDate, $lte: endDate }
+    })
 
     let totalSales = 0
     let totalOrders = 0
     let totalProducts = 0
-
     const salesMap = new Map()
     const categoryMap = new Map()
 
     for (const order of orders) {
       let orderHasSellerItems = false
-      let orderTotalForSeller = 0
-
+      
       for (const item of order.items) {
-        const itemSellerId = item.seller._id || item.seller
-        if (itemSellerId.toString() === sellerId.toString()) {
+        let itemSellerId = item.seller
+        if (itemSellerId && itemSellerId.toString() === sellerId.toString()) {
           orderHasSellerItems = true
           const itemTotal = item.price * item.quantity
-          orderTotalForSeller += itemTotal
           totalSales += itemTotal
           totalProducts += item.quantity
 
@@ -943,11 +939,16 @@ export const getSalesReport = async (req, res) => {
           dayData.sales += itemTotal
 
           let categoryName = "Others"
-          if (item.product && typeof item.product === 'object') {
-            const product = await ProductModel.findById(item.product._id).populate('category')
+          try {
+            const product = await ProductModel.findById(item.product)
             if (product && product.category) {
-              categoryName = product.category.name
+              const category = await product.populate('category')
+              if (category.category) {
+                categoryName = category.category.name
+              }
             }
+          } catch (err) {
+            console.log('Error fetching category:', err.message)
           }
           
           if (!categoryMap.has(categoryName)) {
@@ -956,7 +957,7 @@ export const getSalesReport = async (req, res) => {
           categoryMap.set(categoryName, categoryMap.get(categoryName) + itemTotal)
         }
       }
-
+      
       if (orderHasSellerItems) {
         totalOrders++
         const dateStr = order.createdAt.toISOString().split('T')[0]
@@ -978,67 +979,32 @@ export const getSalesReport = async (req, res) => {
     const categoryData = Array.from(categoryMap.entries())
       .map(([name, value]) => ({
         name,
-        value: Math.round(value)
+        value: Number(value.toFixed(2))
       }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5)
 
     const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0
+    const growthRate = 0
 
-    let previousPeriodSales = 0
-    if (range === 'month') {
-      const previousStart = new Date(startDate)
-      previousStart.setMonth(previousStart.getMonth() - 1)
-      const previousEnd = new Date(startDate)
-      previousEnd.setDate(previousEnd.getDate() - 1)
-      previousEnd.setHours(23, 59, 59, 999)
-      
-      const previousOrders = await OrderModel.find({
-        createdAt: { $gte: previousStart, $lte: previousEnd },
-        "items.seller": sellerId
-      })
-      
-      for (const order of previousOrders) {
-        for (const item of order.items) {
-          const itemSellerId = item.seller._id || item.seller
-          if (itemSellerId.toString() === sellerId.toString()) {
-            previousPeriodSales += item.price * item.quantity
-          }
-        }
-      }
+    const responseData = {
+      summary: {
+        totalSales: Number(totalSales.toFixed(2)),
+        totalOrders,
+        totalProducts,
+        avgOrderValue: Number(avgOrderValue.toFixed(2)),
+        growthRate
+      },
+      salesData,
+      categoryData,
+      monthlyTrends: []
     }
 
-    let growthRate = 0
-    if (previousPeriodSales > 0) {
-      growthRate = ((totalSales - previousPeriodSales) / previousPeriodSales) * 100
-    } else if (totalSales > 0 && previousPeriodSales === 0) {
-      growthRate = 100
-    }
-
-    console.log('Sales Report Generated:', {
-      sellerId: sellerId.toString(),
-      range,
-      totalSales,
-      totalOrders,
-      totalProducts,
-      salesDataPoints: salesData.length,
-      categoryDataPoints: categoryData.length
-    })
+    console.log('Sending response:', JSON.stringify(responseData, null, 2))
 
     res.status(200).json({
       success: true,
-      data: {
-        summary: {
-          totalSales: Math.round(totalSales),
-          totalOrders,
-          totalProducts,
-          avgOrderValue: Math.round(avgOrderValue),
-          growthRate: Math.round(growthRate)
-        },
-        salesData,
-        categoryData,
-        monthlyTrends: []
-      }
+      data: responseData
     })
 
   } catch (error) {
