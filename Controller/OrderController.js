@@ -895,7 +895,6 @@ export const getSalesReport = async (req, res) => {
     let startDate = new Date()
     let endDate = new Date()
 
-    // Set proper date ranges
     if (range === 'week') {
       startDate.setDate(startDate.getDate() - 7)
     } else if (range === 'month') {
@@ -905,20 +904,16 @@ export const getSalesReport = async (req, res) => {
     } else if (range === 'year') {
       startDate.setFullYear(startDate.getFullYear() - 1)
     } else {
-      // Default to month
       startDate.setMonth(startDate.getMonth() - 1)
     }
 
-    // Set start date to beginning of day
     startDate.setHours(0, 0, 0, 0)
     endDate.setHours(23, 59, 59, 999)
 
-    // Find orders for this seller with completed payment
     const orders = await OrderModel.find({
       createdAt: { $gte: startDate, $lte: endDate },
-      paymentStatus: "completed",
       "items.seller": sellerId
-    }).sort({ createdAt: 1 })
+    }).populate('items.product')
 
     let totalSales = 0
     let totalOrders = 0
@@ -926,60 +921,44 @@ export const getSalesReport = async (req, res) => {
 
     const salesMap = new Map()
     const categoryMap = new Map()
-    const monthlyMap = new Map()
 
-    // Process each order
     for (const order of orders) {
       let orderHasSellerItems = false
-      
-      // Process each item in the order
+      let orderTotalForSeller = 0
+
       for (const item of order.items) {
-        // Check if this item belongs to the seller
-        if (item.seller && item.seller.toString() === sellerId.toString()) {
+        const itemSellerId = item.seller._id || item.seller
+        if (itemSellerId.toString() === sellerId.toString()) {
           orderHasSellerItems = true
-          
           const itemTotal = item.price * item.quantity
+          orderTotalForSeller += itemTotal
           totalSales += itemTotal
           totalProducts += item.quantity
-          
-          // Date-based grouping for sales trend
+
           const dateStr = order.createdAt.toISOString().split('T')[0]
           if (!salesMap.has(dateStr)) {
             salesMap.set(dateStr, { sales: 0, orders: 0 })
           }
           const dayData = salesMap.get(dateStr)
           dayData.sales += itemTotal
-          
-          // Monthly trends
-          const monthStr = order.createdAt.toISOString().slice(0, 7)
-          if (!monthlyMap.has(monthStr)) {
-            monthlyMap.set(monthStr, { current: 0, previous: 0 })
-          }
-          monthlyMap.get(monthStr).current += itemTotal
-          
-          // Category distribution
-          try {
-            const product = await ProductModel.findById(item.product).populate('category', 'name')
-            const categoryName = product?.category?.name || "Uncategorized"
-            
-            if (!categoryMap.has(categoryName)) {
-              categoryMap.set(categoryName, 0)
+
+          let categoryName = "Others"
+          if (item.product && typeof item.product === 'object') {
+            const product = await ProductModel.findById(item.product._id).populate('category')
+            if (product && product.category) {
+              categoryName = product.category.name
             }
-            categoryMap.set(categoryName, categoryMap.get(categoryName) + itemTotal)
-          } catch (err) {
-            console.error("Error fetching product category:", err)
-            if (!categoryMap.has("Others")) {
-              categoryMap.set("Others", 0)
-            }
-            categoryMap.set("Others", categoryMap.get("Others") + itemTotal)
           }
+          
+          if (!categoryMap.has(categoryName)) {
+            categoryMap.set(categoryName, 0)
+          }
+          categoryMap.set(categoryName, categoryMap.get(categoryName) + itemTotal)
         }
       }
-      
+
       if (orderHasSellerItems) {
         totalOrders++
-        
-        // Update order count in salesMap
         const dateStr = order.createdAt.toISOString().split('T')[0]
         if (salesMap.has(dateStr)) {
           const dayData = salesMap.get(dateStr)
@@ -988,78 +967,77 @@ export const getSalesReport = async (req, res) => {
       }
     }
 
-    // Convert maps to arrays
     const salesData = Array.from(salesMap.entries())
       .map(([date, data]) => ({
         date,
         sales: data.sales,
         orders: data.orders
       }))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
 
     const categoryData = Array.from(categoryMap.entries())
       .map(([name, value]) => ({
         name,
-        value
+        value: Math.round(value)
       }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 6)
+      .slice(0, 5)
 
     const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0
-    
-    // Calculate growth rate (compare with previous period)
-    let growthRate = 0
+
+    let previousPeriodSales = 0
     if (range === 'month') {
-      const previousMonthStart = new Date(startDate)
-      previousMonthStart.setMonth(previousMonthStart.getMonth() - 1)
-      const previousMonthEnd = new Date(startDate)
-      previousMonthEnd.setDate(previousMonthEnd.getDate() - 1)
-      previousMonthEnd.setHours(23, 59, 59, 999)
+      const previousStart = new Date(startDate)
+      previousStart.setMonth(previousStart.getMonth() - 1)
+      const previousEnd = new Date(startDate)
+      previousEnd.setDate(previousEnd.getDate() - 1)
+      previousEnd.setHours(23, 59, 59, 999)
       
       const previousOrders = await OrderModel.find({
-        createdAt: { $gte: previousMonthStart, $lte: previousMonthEnd },
-        paymentStatus: "completed",
+        createdAt: { $gte: previousStart, $lte: previousEnd },
         "items.seller": sellerId
       })
       
-      let previousSales = 0
       for (const order of previousOrders) {
         for (const item of order.items) {
-          if (item.seller && item.seller.toString() === sellerId.toString()) {
-            previousSales += item.price * item.quantity
+          const itemSellerId = item.seller._id || item.seller
+          if (itemSellerId.toString() === sellerId.toString()) {
+            previousPeriodSales += item.price * item.quantity
           }
         }
       }
-      
-      if (previousSales > 0) {
-        growthRate = ((totalSales - previousSales) / previousSales) * 100
-      } else if (totalSales > 0) {
-        growthRate = 100
-      }
     }
 
-    // Prepare monthly trends data
-    const monthlyTrends = Array.from(monthlyMap.entries())
-      .map(([month, data]) => ({
-        month,
-        current: data.current,
-        previous: 0
-      }))
-      .sort((a, b) => a.month.localeCompare(b.month))
+    let growthRate = 0
+    if (previousPeriodSales > 0) {
+      growthRate = ((totalSales - previousPeriodSales) / previousPeriodSales) * 100
+    } else if (totalSales > 0 && previousPeriodSales === 0) {
+      growthRate = 100
+    }
+
+    console.log('Sales Report Generated:', {
+      sellerId: sellerId.toString(),
+      range,
+      totalSales,
+      totalOrders,
+      totalProducts,
+      salesDataPoints: salesData.length,
+      categoryDataPoints: categoryData.length
+    })
 
     res.status(200).json({
       success: true,
       data: {
         summary: {
-          totalSales,
+          totalSales: Math.round(totalSales),
           totalOrders,
           totalProducts,
-          avgOrderValue,
-          growthRate: parseFloat(growthRate.toFixed(2))
+          avgOrderValue: Math.round(avgOrderValue),
+          growthRate: Math.round(growthRate)
         },
         salesData,
         categoryData,
-        monthlyTrends
+        monthlyTrends: []
       }
     })
 
