@@ -883,6 +883,7 @@ export const updateOrderStatus = async (req, res) => {
         order.status = 'shipped';
       }
     }
+    
 
     await order.save();
 
