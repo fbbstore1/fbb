@@ -9,7 +9,7 @@ import SellerModel from "../Model/SellerModel.js";
 export const addCategory = async (req, res) => {
   try {
     const { name } = req.body;
-    const image = req.file?.location;
+    const image = req.file?.path;
     
     if (!name || !image) {
       return res.status(400).json({ message: "Name and image are required" });
@@ -44,7 +44,7 @@ export const getCategory = async (req, res) => {
 export const addSubcategory = async(req,res)=>{
   try {
     const { name,categoryId } = req.body;
-    const image = req.file?.location;
+    const image = req.file?.path;
     
     if (!name || !image) {
       return res.status(400).json({ message: "Name and image are required" });
@@ -170,7 +170,7 @@ export const login = async (req, res) => {
 
 export const editCategory = async(req,res)=>{
   try {
-    const image = req.file?.location;
+    const image = req.file?.path;
    const {name,categoryId} = req.body
 
    const response = await categoryModel.updateOne(
@@ -186,7 +186,7 @@ export const editCategory = async(req,res)=>{
 
 export const editSubcategory = async(req,res)=>{
   try {
-    const image = req.file?.location
+    const image = req.file?.path
     const {name,categoryId} = req.body
     const id = req.params.id
     const response = await subcategoryModel.updateOne(

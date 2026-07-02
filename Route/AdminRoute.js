@@ -1,46 +1,41 @@
 import express from "express";
 import { addCategory, getCategory, addSubcategory, getSubCategory, updateTrending, SignUp, login, editCategory, getSellers, updateStatus, getSellerProduct, sellerByid, getProducts, editSubcategory } from "../Controller/AdminController.js";
 import multer from "multer";
-import { S3Client } from "@aws-sdk/client-s3";
-import multerS3 from "multer-s3";
+import { v2 as cloudinary } from "cloudinary";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const adminRouter = express.Router();
 
-const s3Client = new S3Client({
-  region: "eu-north-1",
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY || "",
-    secretAccessKey: process.env.AWS_SECRET_KEY || "",
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+const categoryStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "category-fbb",
+    resource_type: "auto",
+    public_id: (req, file) => `${Date.now()}-${file.originalname}`,
   },
 });
 
-const categoryUpload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: "category-fbb",
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: function (req, file, cb) {
-      cb(null, Date.now().toString() + "-" + file.originalname);
-    },
-  }),
+const categoryUpload = multer({ storage: categoryStorage });
+
+const productStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "product-fbb",
+    resource_type: "auto",
+    public_id: (req, file) => `${Date.now()}-${file.fieldname}-${file.originalname}`,
+  },
 });
 
-const productUpload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: "product-fbb",
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: function (req, file, cb) {
-      const fileName = `${Date.now()}-${file.fieldname}-${file.originalname}`;
-      cb(null, fileName);
-    },
-  }),
-});
-
-
+const productUpload = multer({ storage: productStorage });
 
 adminRouter.post("/add-category", categoryUpload.single('image'), addCategory);
 adminRouter.get("/get-category", getCategory);

@@ -1,7 +1,7 @@
 import express from "express";
 import multer from "multer";
-import { S3Client } from "@aws-sdk/client-s3";
-import multerS3 from "multer-s3";
+import { v2 as cloudinary } from "cloudinary";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
 import dotenv from 'dotenv';
 import jwt from "jsonwebtoken";
 import SellerModel from "../Model/SellerModel.js";
@@ -44,37 +44,33 @@ const sellerAuthMiddleware = async (req, res, next) => {
   }
 };
 
-const s3Client = new S3Client({
-  region: "eu-north-1",
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY || "",
-    secretAccessKey: process.env.AWS_SECRET_KEY || "",
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+const profileImageStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "product-fbb/profiles",
+    resource_type: "auto",
+    public_id: (req, file) => `profile-${Date.now()}-${file.originalname}`,
   },
 });
 
-const profileImageUpload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: "product-fbb",
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: function (req, file, cb) {
-      const fileName = `profile-${Date.now()}-${file.originalname}`;
-      cb(null, fileName);
-    },
-  }),
+const profileImageUpload = multer({ storage: profileImageStorage });
+
+const mediaStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "product-fbb/products",
+    resource_type: "auto",
+    public_id: (req, file) => `${Date.now()}-${file.fieldname}-${file.originalname}`,
+  },
 });
 
-const mediaUpload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: "product-fbb",
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: function (req, file, cb) {
-      const fileName = `${Date.now()}-${file.fieldname}-${file.originalname}`;
-      cb(null, fileName);
-    },
-  }),
-});
+const mediaUpload = multer({ storage: mediaStorage });
 
 const handleProductMedia = async (req, res, next) => {
   try {

@@ -168,7 +168,7 @@ export const addProduct = async (req, res) => {
       for (let i = 1; i <= 4; i++) {
         const fieldName = `image${i}`;
         if (req.files[fieldName] && req.files[fieldName][0]) {
-          images[fieldName] = req.files[fieldName][0].location;
+          images[fieldName] = req.files[fieldName][0].path;
           hasImage = true;
         }
       }
@@ -176,7 +176,7 @@ export const addProduct = async (req, res) => {
       for (let i = 1; i <= 2; i++) {
         const fieldName = `video${i}`;
         if (req.files[fieldName] && req.files[fieldName][0]) {
-          videos[fieldName] = req.files[fieldName][0].location;
+          videos[fieldName] = req.files[fieldName][0].path;
         }
       }
     }
@@ -434,14 +434,14 @@ export const updateProduct = async (req, res) => {
       for (let i = 1; i <= 4; i++) {
         const fieldName = `image${i}`;
         if (req.files[fieldName] && req.files[fieldName][0]) {
-          newImages[fieldName] = req.files[fieldName][0].location;
+          newImages[fieldName] = req.files[fieldName][0].path;
         }
       }
 
       for (let i = 1; i <= 2; i++) {
         const fieldName = `video${i}`;
         if (req.files[fieldName] && req.files[fieldName][0]) {
-          newVideos[fieldName] = req.files[fieldName][0].location;
+          newVideos[fieldName] = req.files[fieldName][0].path;
         }
       }
     }
@@ -621,7 +621,7 @@ export const updateProfile = async (req, res) => {
   try {
     const { INR, email, DXB, name, phone, companyName, address, city, state, country, pincode, gstNumber, panNumber } = req.body;
 
-    const image = req.file?.location;
+    const image = req.file?.path;
 
     if (!email) {
       return res.status(400).json({ message: "Email is required" });
