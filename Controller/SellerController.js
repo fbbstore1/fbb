@@ -4,43 +4,55 @@ import jwt from 'jsonwebtoken';
 import productModel from "../Model/ProductModel.js";
 import categoryModel from "../Model/CategoryModel.js";
 import OrderModel from "../Model/OrderModel.js";
-import mongoose from "mongoose";
 
 export const SignUp = async (req, res) => {
   try {
     const { email, phone, password, name, companyName, address, city, state, country, pincode, gstNumber, panNumber } = req.body
 
-  const existing = await SellerModel.findOne({ email })
+    if (!email || !phone || !password || !name) {
+      return res.status(400).json({ message: "Name, email, phone and password are required" });
+    }
 
-  if (existing) {
-    return res.status(400).json({ message: "Email already exists" })
-  }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: "Invalid email format" });
+    }
 
-  const salt = await bcrypt.genSalt(10)
-  const hashedpass = await bcrypt.hash(password, salt)
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters long" });
+    }
 
-  const seller = new SellerModel({
-    name,
-    email,
-    phone,
-    companyName,
-    address,
-    city,
-    state,
-    country,
-    pincode,
-    gstNumber,
-    panNumber,
-    password: hashedpass
-  })
+    const existing = await SellerModel.findOne({ $or: [{ email }, { phone }] })
 
-  await seller.save()
+    if (existing) {
+      return res.status(400).json({ message: "Email or phone already exists" })
+    }
 
-  const token = jwt.sign({ userId: seller._id }, process.env.JWT_SECRET, {
-    expiresIn: '7d',
-  });
+    const salt = await bcrypt.genSalt(10)
+    const hashedpass = await bcrypt.hash(password, salt)
 
-  res.status(201).json(token);
+    const seller = new SellerModel({
+      name,
+      email,
+      phone,
+      companyName,
+      address,
+      city,
+      state,
+      country,
+      pincode,
+      gstNumber,
+      panNumber,
+      password: hashedpass
+    })
+
+    await seller.save()
+
+    const token = jwt.sign({ userId: seller._id }, process.env.JWT_SECRET, {
+      expiresIn: '7d',
+    });
+
+    res.status(201).json({ token });
   } catch (error) {
     res.status(500).json({ message: "Internal server error" })
   }
@@ -59,12 +71,12 @@ export const login = async (req, res) => {
     });
 
     if (!seller) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const isMatch = await bcrypt.compare(password, seller.password);
     if (!isMatch) {
-      return res.status(401).json({ message: "Invalid password" });
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const token = jwt.sign({ userId: seller._id }, process.env.JWT_SECRET, {
@@ -92,8 +104,10 @@ export const login = async (req, res) => {
 
 export const addProduct = async (req, res) => {
   try {
+    const sellerId = req.user?.userId;
+
     const {
-      name, brand, priceINR, priceAED, categoryId, subCategoryId, sellerId,
+      name, brand, priceINR, priceAED, categoryId, subCategoryId,
       description, shortDescription, sku, stock, lowStockThreshold, material,
       colors, sizes, tags, weightValue, weightUnit, length, width, height,
       dimensionUnit, warrantyPeriod, warrantyUnit, warrantyDescription,
@@ -101,6 +115,13 @@ export const addProduct = async (req, res) => {
       discountStartDate, discountEndDate, weightBasedShipping, freeShipping,
       shippingCost, metaTitle, metaDescription, metaKeywords, specifications
     } = req.body;
+
+    if (!sellerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required"
+      });
+    }
 
     if (!name || !name.trim()) {
       return res.status(400).json({
@@ -127,13 +148,6 @@ export const addProduct = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Sub-category is required"
-      });
-    }
-
-    if (!sellerId) {
-      return res.status(400).json({
-        success: false,
-        message: "Seller ID is required"
       });
     }
 
@@ -173,7 +187,7 @@ export const addProduct = async (req, res) => {
         }
       }
 
-      for (let i = 1; i <= 2; i++) {
+      for (let i = 1; i <= 4; i++) {
         const fieldName = `video${i}`;
         if (req.files[fieldName] && req.files[fieldName][0]) {
           videos[fieldName] = req.files[fieldName][0].path;
@@ -210,7 +224,7 @@ export const addProduct = async (req, res) => {
         parsedSpecifications = specifications;
       }
     } catch (error) {
-      console.error('Error parsing specifications:', error);
+      parsedSpecifications = {};
     }
 
     const colorsArray = colors && colors.trim() ? colors.split(',').map(c => c.trim()).filter(c => c) : [];
@@ -307,7 +321,6 @@ export const addProduct = async (req, res) => {
       data: populatedProduct
     });
   } catch (error) {
-    console.error('Add product error:', error);
     res.status(500).json({
       success: false,
       message: "Failed to add product",
@@ -338,7 +351,19 @@ export const getProducts = async (req, res) => {
 export const resetPassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const { userId } = req.params;
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Current and new password are required" });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters long" });
+    }
 
     const seller = await SellerModel.findById(userId);
     if (!seller) {
@@ -365,7 +390,11 @@ export const resetPassword = async (req, res) => {
 
 export const updateProduct = async (req, res) => {
   try {
+
+    console.log("Reach 3")
     const { id } = req.params;
+    const sellerId = req.user?.userId;
+
     const {
       name, brand, categoryId, subCategoryId, priceINR, priceAED, isTrending,
       existingImages, existingVideos, description, shortDescription, sku, stock,
@@ -379,6 +408,13 @@ export const updateProduct = async (req, res) => {
     const product = await productModel.findById(id);
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
+    }
+
+    if (!sellerId || product.seller.toString() !== sellerId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to update this product"
+      });
     }
 
     if (!name || !name.trim()) {
@@ -399,32 +435,24 @@ export const updateProduct = async (req, res) => {
     try {
       if (existingImages && typeof existingImages === 'string') {
         const parsed = JSON.parse(existingImages);
-        if (Array.isArray(parsed)) {
-          parsed.forEach((url, index) => {
-            if (url) parsedExistingImages[`image${index + 1}`] = url;
-          });
-        } else if (typeof parsed === 'object') {
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
           parsedExistingImages = parsed;
         }
       }
     } catch (error) {
-      console.error('Error parsing existing images:', error);
+      parsedExistingImages = {};
     }
 
     let parsedExistingVideos = {};
     try {
       if (existingVideos && typeof existingVideos === 'string') {
         const parsed = JSON.parse(existingVideos);
-        if (Array.isArray(parsed)) {
-          parsed.forEach((url, index) => {
-            if (url) parsedExistingVideos[`video${index + 1}`] = url;
-          });
-        } else if (typeof parsed === 'object') {
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
           parsedExistingVideos = parsed;
         }
       }
     } catch (error) {
-      console.error('Error parsing existing videos:', error);
+      parsedExistingVideos = {};
     }
 
     const newImages = {};
@@ -438,7 +466,7 @@ export const updateProduct = async (req, res) => {
         }
       }
 
-      for (let i = 1; i <= 2; i++) {
+      for (let i = 1; i <= 4; i++) {
         const fieldName = `video${i}`;
         if (req.files[fieldName] && req.files[fieldName][0]) {
           newVideos[fieldName] = req.files[fieldName][0].path;
@@ -608,7 +636,6 @@ export const updateProduct = async (req, res) => {
       data: updatedProduct
     });
   } catch (error) {
-    console.error('Update product error:', error);
     res.status(500).json({
       success: false,
       message: "Failed to update product",
@@ -619,13 +646,14 @@ export const updateProduct = async (req, res) => {
 
 export const updateProfile = async (req, res) => {
   try {
-    const { INR, email, DXB, name, phone, companyName, address, city, state, country, pincode, gstNumber, panNumber } = req.body;
+    const sellerId = req.user?.userId;
+    const { INR, DXB, name, phone, companyName, address, city, state, country, pincode, gstNumber, panNumber } = req.body;
+
+    if (!sellerId) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
 
     const image = req.file?.path;
-
-    if (!email) {
-      return res.status(400).json({ message: "Email is required" });
-    }
 
     const updateFields = {};
     if (INR) updateFields.INR = INR;
@@ -642,8 +670,8 @@ export const updateProfile = async (req, res) => {
     if (panNumber) updateFields.panNumber = panNumber;
     if (image) updateFields.profileImage = image;
 
-    const updatedSeller = await SellerModel.findOneAndUpdate(
-      { email: email },
+    const updatedSeller = await SellerModel.findByIdAndUpdate(
+      sellerId,
       { $set: updateFields },
       { new: true, runValidators: true }
     ).select('-password');
@@ -669,14 +697,25 @@ export const updateProfile = async (req, res) => {
 export const deleteProduct = async (req, res) => {
   try {
     const id = req.params.id;
-    const response = await productModel.findByIdAndDelete(id);
+    const sellerId = req.user?.userId;
 
-    if (!response) {
+    const product = await productModel.findById(id);
+
+    if (!product) {
       return res.status(404).json({
         success: false,
         message: "Product not found"
       });
     }
+
+    if (!sellerId || product.seller.toString() !== sellerId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to delete this product"
+      });
+    }
+
+    await productModel.findByIdAndDelete(id);
 
     res.status(200).json({
       success: true,
@@ -782,7 +821,6 @@ export const getSellerOrders = async (req, res) => {
       orders: formattedOrders
     });
   } catch (error) {
-    console.error('Error in getSellerOrders:', error);
     res.status(500).json({
       success: false,
       message: "Failed to get seller orders",
@@ -793,7 +831,7 @@ export const getSellerOrders = async (req, res) => {
 
 export const updateOrderStatus = async (req, res) => {
   try {
-    const { orderId, itemId, status, trackingNumber } = req.body;
+    const { orderId, status, trackingNumber } = req.body;
     const sellerId = req.user?.userId;
 
     if (!orderId || !status) {
@@ -813,7 +851,7 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     const validStatuses = ['pending', 'accepted', 'processing', 'shipped', 'delivered', 'cancelled'];
-    
+
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
@@ -860,30 +898,29 @@ export const updateOrderStatus = async (req, res) => {
       }
     });
 
-    const allItemsDelivered = order.items.every(item => 
-      item.itemStatus === 'delivered' || 
+    const allItemsDelivered = order.items.every(item =>
+      item.itemStatus === 'delivered' ||
       (item.seller && item.seller.toString() !== sellerId.toString())
     );
-    
+
     if (allItemsDelivered && status === 'delivered') {
       order.status = 'delivered';
     }
 
-    const allItemsShipped = order.items.every(item => 
+    const allItemsShipped = order.items.every(item =>
       item.itemStatus === 'shipped' || item.itemStatus === 'delivered' ||
       (item.seller && item.seller.toString() !== sellerId.toString())
     );
-    
+
     if (allItemsShipped && status === 'shipped') {
       order.status = 'partially_shipped';
-      const allSellersShipped = order.sellerOrders.every(so => 
+      const allSellersShipped = order.sellerOrders.every(so =>
         so.sellerStatus === 'shipped' || so.sellerStatus === 'delivered'
       );
       if (allSellersShipped) {
         order.status = 'shipped';
       }
     }
-    
 
     await order.save();
 
@@ -897,7 +934,6 @@ export const updateOrderStatus = async (req, res) => {
       order: updatedOrder
     });
   } catch (error) {
-    console.error('Error in updateOrderStatus:', error);
     res.status(500).json({
       success: false,
       message: "Failed to update order status",

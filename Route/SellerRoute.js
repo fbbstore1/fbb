@@ -5,14 +5,15 @@ import { CloudinaryStorage } from "multer-storage-cloudinary";
 import dotenv from 'dotenv';
 import jwt from "jsonwebtoken";
 import SellerModel from "../Model/SellerModel.js";
-import { 
-  SignUp, 
-  addProduct, 
-  deleteProduct, 
-  getProducts, 
-  login, 
-  resetPassword, 
-  updateProduct, 
+
+import {
+  SignUp,
+  addProduct,
+  deleteProduct,
+  getProducts,
+  login,
+  resetPassword,
+  updateProduct,
   updateProfile,
   getSellerOrders,
   updateOrderStatus,
@@ -33,6 +34,7 @@ const sellerAuthMiddleware = async (req, res, next) => {
     }
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const seller = await SellerModel.findById(decoded.userId);
+
     if (!seller) {
       return res.status(401).json({ success: false, message: "Seller not found" });
     }
@@ -43,6 +45,13 @@ const sellerAuthMiddleware = async (req, res, next) => {
     res.status(401).json({ success: false, message: "Invalid token" });
   }
 };
+
+console.log("Cloudinary config check:", {
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY ? "set" : "MISSING",
+  api_secret: process.env.CLOUDINARY_API_SECRET ? "set" : "MISSING",
+});
+
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -62,52 +71,69 @@ const profileImageStorage = new CloudinaryStorage({
 const profileImageUpload = multer({ storage: profileImageStorage });
 
 const mediaStorage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: "product-fbb/products",
-    resource_type: "auto",
-    public_id: (req, file) => `${Date.now()}-${file.fieldname}-${file.originalname}`,
+  cloudinary,
+  params: async (req, file) => {
+    const isVideo = file.fieldname.startsWith('video');
+    return {
+      folder: "product-fbb/products",
+      resource_type: isVideo ? "video" : "image",
+      allowed_formats: isVideo
+        ? ["mp4", "mov", "avi", "webm"]
+        : ["jpg", "jpeg", "png", "webp"],
+      public_id: `${file.fieldname}-${Date.now()}`,
+    };
   },
 });
 
-const mediaUpload = multer({ storage: mediaStorage });
+const mediaUpload = multer({
+  storage: mediaStorage,
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
 
 const handleProductMedia = async (req, res, next) => {
-  try {
-    const mediaFields = [
-      { name: 'image1', maxCount: 1 },
-      { name: 'image2', maxCount: 1 },
-      { name: 'image3', maxCount: 1 },
-      { name: 'image4', maxCount: 1 },
-      { name: 'video1', maxCount: 1 },
-      { name: 'video2', maxCount: 1 }
-    ];
-    return mediaUpload.fields(mediaFields)(req, res, (err) => {
-      if (err) {
-        return res.status(400).json({ error: `Error uploading files: ${err.message}` });
-      }
-      next();
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  const mediaFields = [
+    { name: 'image1', maxCount: 1 },
+    { name: 'image2', maxCount: 1 },
+    { name: 'image3', maxCount: 1 },
+    { name: 'image4', maxCount: 1 },
+    { name: 'video1', maxCount: 1 },
+    { name: 'video2', maxCount: 1 },
+    { name: 'video3', maxCount: 1 },
+    { name: 'video4', maxCount: 1 }
+  ];
+
+  mediaUpload.fields(mediaFields)(req, res, function (err) {
+    if (err) {
+      console.error("=== MULTER/CLOUDINARY UPLOAD ERROR ===");
+      console.error("Error name:", err.name);
+      console.error("Error message:", err.message);
+      console.error("Error code:", err.code);
+      console.error("Full error:", err);
+      console.error("req.body at time of error:", req.body);
+      return res.status(400).json({
+        success: false,
+        error: err.message,
+        code: err.code || null,
+        name: err.name || null
+      });
+    }
+    console.log("Upload succeeded. Files received:", req.files ? Object.keys(req.files) : "none");
+    next();
+  });
 };
 
 SellerRouter.post("/register", SignUp);
 SellerRouter.post("/login", login);
-SellerRouter.post('/reset-password/:userId', resetPassword);
-
+SellerRouter.put('/reset-password', sellerAuthMiddleware, resetPassword);
 SellerRouter.get('/profile/:id', getSellerProfile);
-SellerRouter.put('/update-profile/:userId', profileImageUpload.single('profileImage'), updateProfile);
-
-SellerRouter.post("/add-product", handleProductMedia, addProduct);
+SellerRouter.put('/update-profile', sellerAuthMiddleware, profileImageUpload.single('profileImage'), updateProfile);
+SellerRouter.post("/add-product", sellerAuthMiddleware, handleProductMedia, addProduct);
 SellerRouter.get("/get-products/:id", getProducts);
-SellerRouter.put("/edit-product/:id", handleProductMedia, updateProduct);
-SellerRouter.delete("/delete-product/:id", deleteProduct);
-
+SellerRouter.put("/edit-product/:id", sellerAuthMiddleware, handleProductMedia, updateProduct);
+SellerRouter.delete("/delete-product/:id", sellerAuthMiddleware, deleteProduct);
 SellerRouter.get("/orders", sellerAuthMiddleware, getSellerOrders);
 SellerRouter.post("/orders/update-status", sellerAuthMiddleware, updateOrderStatus);
 SellerRouter.get("/dashboard/stats", sellerAuthMiddleware, getSellerDashboardStats);
-SellerRouter.get("/sales-report", sellerAuthMiddleware, getSalesReport)
+SellerRouter.get("/sales-report", sellerAuthMiddleware, getSalesReport);
 
 export default SellerRouter;
